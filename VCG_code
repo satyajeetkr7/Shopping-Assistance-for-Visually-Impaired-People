@@ -1,0 +1,103 @@
+from sklearn.model_selection import train_test_split
+from keras.preprocessing import image
+import numpy as np
+import pandas as pd
+from keras.models import Model
+from keras.layers import Dense,Flatten
+import os.path
+from keras.applications import VGG16
+from keras.preprocessing.image import ImageDataGenerator
+labels = pd.read_csv("D:\\index2\\UPC_index.txt",sep="\t")
+print(labels.shape)
+print(labels.head(3))
+#
+tag=[]
+train_image = []
+for i in (range(1,120)):
+    j=1
+    while(j!=0):
+        file_path='D:\\inVitro\\'+str(i)+'\\web\\PNG\\'+'web'+str(j)+'.png'
+        if os.path.isfile(file_path):
+            img = image.load_img(file_path, target_size=(32,32,1), grayscale=False)
+            img = image.img_to_array(img)
+            img = img/255
+            train_image.append(img)
+            tag.append(labels.iloc[i]['product_name'])
+            #print(i,":",labels.iloc[i]['product_name'])
+            j=j+1
+        else:
+            j=0
+
+print("tag length:",len(tag))
+print("Total InVitro Images: ",len(train_image))
+list_of_tuples=list(zip(train_image,tag))
+df = pd.DataFrame(list_of_tuples, columns = ['img', 'label'])
+print(df.shape)
+
+X = np.array(train_image)
+
+y=pd.get_dummies(df['label']).values
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, test_size=0.2)
+
+print("Train Images:",X_train.shape[0])
+print("Test Images:",X_test.shape[0])
+
+
+vgg = VGG16(input_shape = (32,32,3), weights = 'imagenet', include_top = False)
+
+for layer in vgg.layers:
+    layer.trainable = False
+
+x = Flatten()(vgg.output)
+#x = Dense(128, activation = 'relu')(x)   # we can add a new fully connected layer but it will increase the execution time.
+x = Dense(119, activation = 'softmax')(x)  # adding the output layer with softmax function as this is a multi label classification problem.
+
+model = Model(inputs = vgg.input, outputs = x)
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+datagen = ImageDataGenerator(
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True)
+datagen.fit(X_train)
+history = model.fit_generator(datagen.flow(X_train,y_train,batch_size=32),
+                   steps_per_epoch = 539,  # this should be equal to total number of images in training set. But to speed up the execution, I am only using 10000 images. Change this for better results. 
+                   epochs = 5,  # change this for better results
+                   validation_data = (X_test,y_test),
+                   validation_steps = 135)  # this should be equal to total number of images in validation set.
+print ('Training Accuracy = ' + str(history.history['acc']))
+
+tag1=[]
+test_image = []
+for i in (range(1,120)):
+    j=1
+    while(j!=0):
+        file_path='D:\\inSitu\\'+str(i)+'\\video\\video'+str(j)+'.png'
+        if os.path.isfile(file_path):
+            img = image.load_img(file_path, target_size=(32,32,1), grayscale=False)
+            img = image.img_to_array(img)
+            img = img/255
+            test_image.append(img)
+            tag1.append(labels.iloc[i]['product_name'])
+            j=j+1
+        else:
+            j=0
+
+print("Total InSitu Images: ",len(test_image))
+list_of_tuples=list(zip(test_image,tag1))
+df = pd.DataFrame(list_of_tuples, columns = ['img', 'label'])
+print(df.shape)
+test = np.array(test_image)
+ytest=pd.get_dummies(df['label']).values
+
+predictions= model.predict(X_test)
+
+scores = model.evaluate(X_test, y_test, verbose=0)
+print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
+
+
+
